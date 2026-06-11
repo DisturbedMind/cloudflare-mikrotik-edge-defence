@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh Home Cinema MikroTik offender feed
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30min
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

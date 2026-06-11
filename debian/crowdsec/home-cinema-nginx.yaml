@@ -1,0 +1,5 @@
+filenames:
+  - /opt/home-cinema-edge/logs/nginx/*.log
+labels:
+  type: nginx
+

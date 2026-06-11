@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+debian/home-cinema.env
+routeros/home-cinema-router.generated.rsc
+*.token
+*.secret
+*.key
+*.pem
+__pycache__/
+.DS_Store
+

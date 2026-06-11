@@ -1,0 +1,22 @@
+{
+  "feeds": [
+    {
+      "name": "emerging_threats_compromised",
+      "url": "https://rules.emergingthreats.net/blockrules/compromised-ips.txt",
+      "parser": "text",
+      "enabled": true
+    },
+    {
+      "name": "blocklist_de_all",
+      "url": "https://lists.blocklist.de/lists/all.txt",
+      "parser": "text",
+      "enabled": false
+    },
+    {
+      "name": "greensnow",
+      "url": "https://blocklist.greensnow.co/greensnow.txt",
+      "parser": "text",
+      "enabled": false
+    }
+  ]
+}

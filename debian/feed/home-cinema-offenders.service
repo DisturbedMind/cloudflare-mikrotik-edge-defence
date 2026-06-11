@@ -1,0 +1,8 @@
+[Unit]
+Description=Build Home Cinema MikroTik offender feed
+After=network-online.target crowdsec.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/home-cinema-edge/feed/build-mikrotik-offenders.py --output-dir /opt/home-cinema-edge/feed/public --feeds-file /opt/home-cinema-edge/feed/blocklists.json --max-entries 5000

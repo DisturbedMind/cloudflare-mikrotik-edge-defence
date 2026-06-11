@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Home Cinema Config Form</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; color: #17202a; background: #f6f8fb; }
+    main { max-width: 980px; margin: 0 auto; padding: 28px; }
+    h1 { font-size: 28px; margin: 0 0 6px; }
+    p { color: #4b5563; }
+    form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    label { display: grid; gap: 6px; font-size: 13px; font-weight: 700; }
+    input, select, textarea { box-sizing: border-box; width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font: inherit; background: white; }
+    textarea { min-height: 220px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+    .wide { grid-column: 1 / -1; }
+    .actions { display: flex; gap: 10px; margin: 18px 0; flex-wrap: wrap; }
+    button { border: 0; border-radius: 6px; padding: 10px 14px; font-weight: 700; cursor: pointer; background: #0f766e; color: white; }
+    button.secondary { background: #334155; }
+    .note { background: #fff; border: 1px solid #d8dee8; border-radius: 8px; padding: 12px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Home Cinema Config Form</h1>
+  <p>Runs entirely in your browser. It generates local config text; nothing is uploaded anywhere.</p>
+
+  <form id="cfg">
+    <label>Install directory<input name="STACK_DIR" value="/opt/home-cinema-edge"></label>
+    <label>Debian LAN IP<input name="LAN_IP" value="192.168.1.10"></label>
+    <label>Feed bind IP<input name="FEED_BIND_IP" value="0.0.0.0"></label>
+    <label>MikroTik router IP<input name="ROUTER_IP" value="192.168.1.1"></label>
+    <label>Local proxy port<input name="LOCAL_PROXY_PORT" value="18080"></label>
+    <label>Tunnel name<input name="TUNNEL_NAME" value="home-cinema"></label>
+    <label>Cloudflare zone<input name="ZONE_NAME" value="example.com"></label>
+    <label>First public hostname<input name="EMBY_HOSTNAME" value="emby.example.com"></label>
+    <label>Second public hostname<input name="STREAM_HOSTNAME" value="stream.example.com"></label>
+    <label>First upstream IP:port<input name="EMBY_UPSTREAM" value="192.168.1.110:8096"></label>
+    <label>Second upstream IP:port<input name="STREAM_UPSTREAM" value="192.168.1.118:8096"></label>
+    <label>Set up tunnel?<select name="SETUP_TUNNEL"><option value="1">Yes</option><option value="0">No</option></select></label>
+    <label>Start bouncer immediately?<select name="START_CLOUDFLARE_BOUNCER"><option value="0">No</option><option value="1">Yes</option></select></label>
+    <label class="wide">Cloudflare Tunnel token<input name="TUNNEL_TOKEN" placeholder="Paste token from cloudflared service install command"></label>
+    <label class="wide">Cloudflare API token<input name="CLOUDFLARE_API_TOKEN" placeholder="Optional CrowdSec Cloudflare Workers bouncer token"></label>
+  </form>
+
+  <div class="actions">
+    <button type="button" id="generate">Generate</button>
+    <button type="button" class="secondary" id="download-env">Download home-cinema.env</button>
+    <button type="button" class="secondary" id="download-router">Download RouterOS script</button>
+  </div>
+
+  <div class="note wide">
+    <strong>GitHub safety:</strong> commit this form and the examples, but do not commit generated files containing tokens.
+  </div>
+
+  <h2>home-cinema.env</h2>
+  <textarea id="envOut" spellcheck="false"></textarea>
+  <h2>home-cinema-router.generated.rsc</h2>
+  <textarea id="routerOut" spellcheck="false"></textarea>
+</main>
+
+<script>
+const form = document.getElementById('cfg');
+const envOut = document.getElementById('envOut');
+const routerOut = document.getElementById('routerOut');
+
+function values() {
+  return Object.fromEntries(new FormData(form).entries());
+}
+
+function renderEnv(v) {
+  const q = (s) => `'${String(s).replaceAll("'", "'\\''")}'`;
+  return [
+    `STACK_DIR=${q(v.STACK_DIR)}`,
+    `LAN_IP=${q(v.LAN_IP)}`,
+    `FEED_BIND_IP=${q(v.FEED_BIND_IP)}`,
+    `ROUTER_IP=${q(v.ROUTER_IP)}`,
+    `LOCAL_PROXY_PORT=${q(v.LOCAL_PROXY_PORT)}`,
+    `TUNNEL_NAME=${q(v.TUNNEL_NAME)}`,
+    `ZONE_NAME=${q(v.ZONE_NAME)}`,
+    `EMBY_HOSTNAME=${q(v.EMBY_HOSTNAME)}`,
+    `STREAM_HOSTNAME=${q(v.STREAM_HOSTNAME)}`,
+    `EMBY_UPSTREAM=${q(v.EMBY_UPSTREAM)}`,
+    `STREAM_UPSTREAM=${q(v.STREAM_UPSTREAM)}`,
+    `SETUP_TUNNEL=${q(v.SETUP_TUNNEL)}`,
+    `TUNNEL_TOKEN=${q(v.TUNNEL_TOKEN)}`,
+    `CLOUDFLARE_API_TOKEN=${q(v.CLOUDFLARE_API_TOKEN)}`,
+    `START_CLOUDFLARE_BOUNCER=${q(v.START_CLOUDFLARE_BOUNCER)}`,
+    ''
+  ].join('\n');
+}
+
+function renderRouter(v) {
+  return `# Home Cinema RouterOS 7.23 edge/local offender updater
+# Router: ${v.ROUTER_IP}
+# Feed source: Debian reverse proxy at ${v.LAN_IP}:8088
+
+:local offenderList "home_cinema_offenders"
+
+:if ([:len [/ip firewall raw find comment="home-cinema raw drop offenders"]] = 0) do={
+    /ip firewall raw add chain=prerouting src-address-list=$offenderList action=drop comment="home-cinema raw drop offenders"
+    /ip firewall raw move [find comment="home-cinema raw drop offenders"] 0
+}
+
+:if ([:len [/ip firewall filter find comment="home-cinema input drop offenders"]] = 0) do={
+    /ip firewall filter add chain=input src-address-list=$offenderList action=drop comment="home-cinema input drop offenders"
+    /ip firewall filter move [find comment="home-cinema input drop offenders"] 0
+}
+
+:if ([:len [/ip firewall filter find comment="home-cinema forward drop offenders"]] = 0) do={
+    /ip firewall filter add chain=forward src-address-list=$offenderList action=drop comment="home-cinema forward drop offenders"
+    /ip firewall filter move [find comment="home-cinema forward drop offenders"] 0
+}
+
+:if ([:len [/system script find name="home-cinema-update-offenders"]] = 0) do={
+    /system script add name="home-cinema-update-offenders" policy=read,write,policy,test source={
+        :local feedUrl "http://${v.LAN_IP}:8088/mikrotik/offenders.rsc"
+        :local feedFile "home-cinema-offenders.rsc"
+        :log info "home-cinema: fetching offender feed"
+        :do {
+            /tool fetch url=$feedUrl dst-path=$feedFile
+            /import file-name=$feedFile
+            :log info "home-cinema: offender feed import complete"
+        } on-error={
+            :log warning "home-cinema: offender feed update failed"
+        }
+    }
+} else={
+    /system script set [find name="home-cinema-update-offenders"] source={
+        :local feedUrl "http://${v.LAN_IP}:8088/mikrotik/offenders.rsc"
+        :local feedFile "home-cinema-offenders.rsc"
+        :log info "home-cinema: fetching offender feed"
+        :do {
+            /tool fetch url=$feedUrl dst-path=$feedFile
+            /import file-name=$feedFile
+            :log info "home-cinema: offender feed import complete"
+        } on-error={
+            :log warning "home-cinema: offender feed update failed"
+        }
+    }
+}
+
+:if ([:len [/system scheduler find name="home-cinema-update-offenders"]] = 0) do={
+    /system scheduler add name="home-cinema-update-offenders" interval=30m start-time=startup on-event="/system script run home-cinema-update-offenders" comment="home-cinema offender updater"
+} else={
+    /system scheduler set [find name="home-cinema-update-offenders"] interval=30m on-event="/system script run home-cinema-update-offenders" comment="home-cinema offender updater"
+}
+
+/system script run home-cinema-update-offenders
+`;
+}
+
+function generate() {
+  const v = values();
+  envOut.value = renderEnv(v);
+  routerOut.value = renderRouter(v);
+}
+
+function download(name, text) {
+  const blob = new Blob([text], {type: 'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('generate').addEventListener('click', generate);
+document.getElementById('download-env').addEventListener('click', () => download('home-cinema.env', envOut.value || renderEnv(values())));
+document.getElementById('download-router').addEventListener('click', () => download('home-cinema-router.generated.rsc', routerOut.value || renderRouter(values())));
+generate();
+</script>
+</body>
+</html>
