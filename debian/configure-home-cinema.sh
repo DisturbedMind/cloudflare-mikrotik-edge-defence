@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/home-cinema.env"
 ROUTER_TEMPLATE="${SCRIPT_DIR}/../routeros/home-cinema-router.rsc"
 ROUTER_OUTPUT="${SCRIPT_DIR}/../routeros/home-cinema-router.generated.rsc"
+CF_CHECKLIST_OUTPUT="${SCRIPT_DIR}/../cloudflare-public-hostnames.generated.txt"
 
 prompt() {
   local name="$1"
@@ -55,10 +56,39 @@ shell_quote() {
 
 generate_routeros() {
   sed \
-    -e "s#192.168.1.10#${LAN_IP}#g" \
-    -e "s#192.168.1.1#${ROUTER_IP}#g" \
+    -e "s#192.168.1.10#__LAN_IP__#g" \
+    -e "s#192.168.1.1#__ROUTER_IP__#g" \
+    -e "s#__LAN_IP__#${LAN_IP}#g" \
+    -e "s#__ROUTER_IP__#${ROUTER_IP}#g" \
     "${ROUTER_TEMPLATE}" >"${ROUTER_OUTPUT}"
   chmod 0600 "${ROUTER_OUTPUT}"
+}
+
+generate_cloudflare_checklist() {
+  cat >"${CF_CHECKLIST_OUTPUT}" <<EOF
+Cloudflare Zero Trust public hostnames
+======================================
+
+If you use TUNNEL_TOKEN with a preconfigured/remotely managed tunnel, the Debian
+installer only installs the connector. It does not publish public hostnames.
+
+Cloudflare path:
+  Zero Trust -> Networks -> Tunnels -> ${TUNNEL_NAME} -> Public Hostnames
+
+Add these public hostnames:
+
+1. Public hostname: ${EMBY_HOSTNAME}
+   Service type: HTTP
+   Service URL: 127.0.0.1:${LOCAL_PROXY_PORT}
+
+2. Public hostname: ${STREAM_HOSTNAME}
+   Service type: HTTP
+   Service URL: 127.0.0.1:${LOCAL_PROXY_PORT}
+
+If you want the script to publish DNS routes automatically, leave TUNNEL_TOKEN
+empty and use the locally managed cloudflared login flow instead.
+EOF
+  chmod 0600 "${CF_CHECKLIST_OUTPUT}"
 }
 
 main() {
@@ -83,11 +113,13 @@ main() {
 
   write_env
   generate_routeros
+  generate_cloudflare_checklist
 
   echo
   echo "Wrote:"
   echo "  ${ENV_FILE}"
   echo "  ${ROUTER_OUTPUT}"
+  echo "  ${CF_CHECKLIST_OUTPUT}"
   echo
   echo "Run:"
   echo "  sudo ./setup-home-cinema.sh"

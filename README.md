@@ -1,9 +1,38 @@
-
-Cloudflare and Mikrotik Edge and Local Defence. The safest way to publish your Emby/Plex or Jellyfin server whithout the need to open ports on your router.
+![Home Cinema Edge Defense wolf](assets/wolf.png)
 
 # Home Cinema Edge Defense
 
-This bundle deploys a Cloudflare Tunnel named `home-cinema`, an Nginx reverse proxy on Debian 12.11, local CrowdSec detection, Cloudflare edge blocking via the CrowdSec Cloudflare Workers bouncer, and a MikroTik RouterOS offender updater.
+Home Cinema Edge Defense publishes self-hosted Emby services through Cloudflare Tunnel while keeping the home router closed to unsolicited inbound traffic. It combines Cloudflare, Nginx, CrowdSec, and MikroTik RouterOS into a repeatable deployment that can be configured locally without committing secrets to GitHub.
+
+The committed defaults use documentation-safe placeholders: `example.com` for DNS and `192.168.1.0/24` for the example LAN.
+
+## What This Gives You
+
+- Public HTTPS access to two Emby servers without opening inbound WAN ports on the MikroTik.
+- A Debian reverse proxy that routes:
+  - `emby.example.com` to `192.168.1.110:8096`
+  - `stream.example.com` to `192.168.1.118:8096`
+- Cloudflare Tunnel support using either a tunnel token or locally managed `cloudflared` login.
+- Local CrowdSec detection from Nginx logs.
+- Optional Cloudflare edge blocking through the CrowdSec Cloudflare Workers bouncer.
+- A MikroTik offender feed that imports CrowdSec/public blocklist decisions into a RouterOS address list.
+- A repair script for the feed endpoint, Docker Compose detection, and first-run validation.
+- GitHub-safe configuration using `home-cinema.env`, an interactive terminal form, and an offline browser form.
+
+## Why Cloudflare Tunnel Instead Of Opening Ports
+
+Opening ports exposes your public IP and origin services directly to the internet. Even with good firewall rules, a forwarded HTTP/S service can be scanned, brute-forced, fingerprinted, and attacked before your local tools have enough signal to react.
+
+Cloudflare Tunnel changes that model:
+
+- No inbound NAT/port-forward is needed on the MikroTik.
+- The Debian server makes an outbound encrypted tunnel to Cloudflare.
+- Cloudflare becomes the public edge, so hostile traffic reaches Cloudflare first.
+- CrowdSec decisions can be pushed outward to Cloudflare's edge instead of only blocking after traffic reaches your LAN.
+- Your origin IP and Emby servers are harder to discover because there is no public listener on the router.
+- You still keep local defense: Nginx logs feed CrowdSec, and MikroTik can import offender lists for direct-origin attempts or other local blocking.
+
+This is not magic invisibility, and Cloudflare should still be configured carefully. But for a home media service, a tunnel-first design is safer than exposing ports directly from the router.
 
 ## Topology
 
@@ -30,8 +59,6 @@ Port `8080` is intentionally left for CrowdSec's local API.
 
 If Docker says `bind: cannot assign requested address`, the value being used for the feed bind IP is not assigned to the Debian server. Set `FEED_BIND_IP=0.0.0.0` in `debian/home-cinema.env` or `/opt/home-cinema-edge/.env`. Keep `LAN_IP` set to the address the MikroTik should fetch.
 
-## Debian Install
-
 ## GitHub-Safe Config
 
 This project is safe to publish when you commit only the templates and examples. Do not commit generated files containing tokens.
@@ -54,6 +81,7 @@ Or open `config-form.html` in a browser. It runs locally/offline and generates:
 
 - `home-cinema.env`
 - `home-cinema-router.generated.rsc`
+- `cloudflare-public-hostnames.generated.txt`
 
 Nothing is uploaded by the form.
 
@@ -97,7 +125,20 @@ sudo ./setup-home-cinema.sh
 
 This avoids the interactive `cloudflared tunnel login` flow. Cloudflare documents this token service install pattern as `sudo cloudflared service install <TOKEN>`.
 
-If you prefer the locally managed tunnel flow, run without `TUNNEL_TOKEN`; the installer will call `cloudflared tunnel login`, create/reuse tunnel `home-cinema`, and route both DNS names.
+Important: token/preconfigured tunnel mode installs the connector only. It does not publish public hostnames or route DNS names from the Debian script. Public hostnames must be added in Cloudflare Zero Trust:
+
+```text
+Zero Trust -> Networks -> Tunnels -> home-cinema -> Public Hostnames
+```
+
+Add:
+
+```text
+emby.example.com   -> HTTP -> 127.0.0.1:18080
+stream.example.com -> HTTP -> 127.0.0.1:18080
+```
+
+If you prefer the locally managed tunnel flow, run without `TUNNEL_TOKEN`; the installer will call `cloudflared tunnel login`, create/reuse tunnel `home-cinema`, write local ingress config, and run `cloudflared tunnel route dns` for both DNS names.
 
 The installer handles Cloudflare apt key failures such as `NO_PUBKEY 254B391D8CACCBF8` by removing stale `cloudflared` apt source files, reinstalling Cloudflare's signing key, and falling back to Cloudflare's official latest `.deb` from GitHub if apt still refuses the repository.
 

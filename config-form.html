@@ -18,6 +18,7 @@
     button { border: 0; border-radius: 6px; padding: 10px 14px; font-weight: 700; cursor: pointer; background: #0f766e; color: white; }
     button.secondary { background: #334155; }
     .note { background: #fff; border: 1px solid #d8dee8; border-radius: 8px; padding: 12px; }
+    .warn { border-color: #f59e0b; background: #fffbeb; color: #78350f; }
   </style>
 </head>
 <body>
@@ -47,22 +48,30 @@
     <button type="button" id="generate">Generate</button>
     <button type="button" class="secondary" id="download-env">Download home-cinema.env</button>
     <button type="button" class="secondary" id="download-router">Download RouterOS script</button>
+    <button type="button" class="secondary" id="download-cloudflare">Download Cloudflare checklist</button>
   </div>
 
   <div class="note wide">
     <strong>GitHub safety:</strong> commit this form and the examples, but do not commit generated files containing tokens.
   </div>
 
+  <div class="note warn wide">
+    <strong>Remote tunnel note:</strong> if you paste a Cloudflare Tunnel token, the installer connects this Debian server to an existing Cloudflare Tunnel. It does not publish public hostnames. Add them in Cloudflare Zero Trust, or leave the token blank and use the locally managed tunnel flow.
+  </div>
+
   <h2>home-cinema.env</h2>
   <textarea id="envOut" spellcheck="false"></textarea>
   <h2>home-cinema-router.generated.rsc</h2>
   <textarea id="routerOut" spellcheck="false"></textarea>
+  <h2>cloudflare-public-hostnames.generated.txt</h2>
+  <textarea id="cloudflareOut" spellcheck="false"></textarea>
 </main>
 
 <script>
 const form = document.getElementById('cfg');
 const envOut = document.getElementById('envOut');
 const routerOut = document.getElementById('routerOut');
+const cloudflareOut = document.getElementById('cloudflareOut');
 
 function values() {
   return Object.fromEntries(new FormData(form).entries());
@@ -150,10 +159,36 @@ function renderRouter(v) {
 `;
 }
 
+function renderCloudflareChecklist(v) {
+  return `Cloudflare Zero Trust public hostnames
+======================================
+
+If you use TUNNEL_TOKEN with a preconfigured/remotely managed tunnel, the Debian
+installer only installs the connector. It does not publish public hostnames.
+
+Cloudflare path:
+  Zero Trust -> Networks -> Tunnels -> ${v.TUNNEL_NAME} -> Public Hostnames
+
+Add these public hostnames:
+
+1. Public hostname: ${v.EMBY_HOSTNAME}
+   Service type: HTTP
+   Service URL: 127.0.0.1:${v.LOCAL_PROXY_PORT}
+
+2. Public hostname: ${v.STREAM_HOSTNAME}
+   Service type: HTTP
+   Service URL: 127.0.0.1:${v.LOCAL_PROXY_PORT}
+
+If you want the script to publish DNS routes automatically, leave TUNNEL_TOKEN
+empty and use the locally managed cloudflared login flow instead.
+`;
+}
+
 function generate() {
   const v = values();
   envOut.value = renderEnv(v);
   routerOut.value = renderRouter(v);
+  cloudflareOut.value = renderCloudflareChecklist(v);
 }
 
 function download(name, text) {
@@ -169,6 +204,7 @@ function download(name, text) {
 document.getElementById('generate').addEventListener('click', generate);
 document.getElementById('download-env').addEventListener('click', () => download('home-cinema.env', envOut.value || renderEnv(values())));
 document.getElementById('download-router').addEventListener('click', () => download('home-cinema-router.generated.rsc', routerOut.value || renderRouter(values())));
+document.getElementById('download-cloudflare').addEventListener('click', () => download('cloudflare-public-hostnames.generated.txt', cloudflareOut.value || renderCloudflareChecklist(values())));
 generate();
 </script>
 </body>

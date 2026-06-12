@@ -49,10 +49,51 @@ write_seed_feed() {
   chmod 0644 "${STACK_DIR}/feed/public/offenders.rsc" "${STACK_DIR}/feed/public/offenders.txt" "${STACK_DIR}/feed/public/metadata.json"
 }
 
+repair_nginx_feed_locations() {
+  local cfg="${STACK_DIR}/nginx/home-cinema.conf"
+  [[ -f "${cfg}" ]] || die "${cfg} does not exist"
+
+  if grep -q 'try_files /offenders.rsc' "${cfg}"; then
+    cp "${cfg}" "${cfg}.bak.$(date +%Y%m%d%H%M%S)"
+    python3 - "${cfg}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+
+replacements = {
+    r'location = /mikrotik/offenders\.rsc \{.*?\n    \}': '''location = /mikrotik/offenders.rsc {
+        alias /usr/share/nginx/feed/offenders.rsc;
+        default_type text/plain;
+        add_header Cache-Control "no-store";
+    }''',
+    r'location = /mikrotik/offenders\.txt \{.*?\n    \}': '''location = /mikrotik/offenders.txt {
+        alias /usr/share/nginx/feed/offenders.txt;
+        default_type text/plain;
+        add_header Cache-Control "no-store";
+    }''',
+    r'location = /mikrotik/metadata\.json \{.*?\n    \}': '''location = /mikrotik/metadata.json {
+        alias /usr/share/nginx/feed/metadata.json;
+        default_type application/json;
+        add_header Cache-Control "no-store";
+    }''',
+}
+
+for pattern, repl in replacements.items():
+    text = re.sub(pattern, repl, text, flags=re.S)
+
+path.write_text(text)
+PY
+  fi
+}
+
 main() {
   need_root
   cd "${STACK_DIR}" || die "${STACK_DIR} does not exist"
   write_seed_feed
+  repair_nginx_feed_locations
 
   echo "Using Compose: $(compose_cmd)"
   run_compose down
@@ -78,4 +119,3 @@ main() {
 }
 
 main "$@"
-

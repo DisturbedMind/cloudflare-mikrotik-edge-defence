@@ -45,6 +45,17 @@ compose_cmd() {
   fi
 }
 
+remove_stale_cloudflared_apt_sources() {
+  if [[ -d /etc/apt/sources.list.d ]]; then
+    find /etc/apt/sources.list.d -type f \( -name '*.list' -o -name '*.sources' \) -print0 \
+      | while IFS= read -r -d '' source_file; do
+          if grep -q 'pkg.cloudflare.com/cloudflared' "${source_file}"; then
+            rm -f "${source_file}"
+          fi
+        done
+  fi
+}
+
 run_compose() {
   local compose
   compose="$(compose_cmd)"
@@ -52,6 +63,7 @@ run_compose() {
 }
 
 install_base_packages() {
+  remove_stale_cloudflared_apt_sources
   apt-get update
   apt-get install -y apt-transport-https ca-certificates curl debian-archive-keyring docker.io gnupg jq python3 systemd
   if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then
@@ -64,12 +76,7 @@ install_cloudflared() {
   apt-get install -y ca-certificates curl gnupg
   mkdir -p --mode=0755 /usr/share/keyrings
 
-  find /etc/apt/sources.list.d -type f -name '*.list' -print0 \
-    | while IFS= read -r -d '' list_file; do
-        if grep -q 'pkg.cloudflare.com/cloudflared' "${list_file}"; then
-          rm -f "${list_file}"
-        fi
-      done
+  remove_stale_cloudflared_apt_sources
 
   rm -f /usr/share/keyrings/cloudflare-main.gpg
   curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg -o /usr/share/keyrings/cloudflare-main.gpg
@@ -198,7 +205,23 @@ configure_tunnel() {
     cloudflared service install "${TUNNEL_TOKEN}"
     systemctl enable --now cloudflared
     systemctl restart cloudflared
-    echo "Remote tunnel mode: configure public hostnames in Cloudflare Zero Trust to point to http://127.0.0.1:${LOCAL_PROXY_PORT}."
+    cat <<EOF
+
+Remote tunnel mode installed the connector only.
+
+Because TUNNEL_TOKEN uses a preconfigured/remotely managed Cloudflare Tunnel,
+this script cannot publish public hostnames/routes with cloudflared route dns.
+
+In Cloudflare Zero Trust, open:
+  Networks -> Tunnels -> ${TUNNEL_NAME} -> Public Hostnames
+
+Add:
+  ${EMBY_HOSTNAME}   -> HTTP -> 127.0.0.1:${LOCAL_PROXY_PORT}
+  ${STREAM_HOSTNAME} -> HTTP -> 127.0.0.1:${LOCAL_PROXY_PORT}
+
+If you want this script to publish DNS routes automatically, run without
+TUNNEL_TOKEN and use the locally managed tunnel flow.
+EOF
     return 0
   fi
 
